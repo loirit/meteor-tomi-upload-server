@@ -1,7 +1,8 @@
 var formidable = Npm.require('formidable');
 var http = Npm.require('http');
 var sys = Npm.require('sys');
-var connect = Npm.require('connect');
+//var connect = Npm.require('connect');
+var serveStatic = Npm.require('serve-static');
 var path = Npm.require('path');
 var fs = Npm.require('fs');
 var Fiber = Npm.require('fibers');
@@ -30,7 +31,7 @@ var  options = {
       height: 200
     }
   },
-  getDirectory: function(fileInfo, formData) { return "" },
+  getDirectory: function(fileInfo, formData) { return ""; },
   getFileName: function(fileInfo, formData) { return fileInfo.name; },
   finished: function() {},
   accessControl: {
@@ -49,9 +50,9 @@ var  options = {
 
 UploadServer = {
   init: function(opts) {
-    if (opts.checkCreateDirectories != null) options.checkCreateDirectories = opts.checkCreateDirectories;
+    if (opts.checkCreateDirectories !== null) options.checkCreateDirectories = opts.checkCreateDirectories;
 
-    if (opts.tmpDir == null) {
+    if (opts.tmpDir === null) {
       throw new Meteor.Error('Temporary directory needs to be assigned!');
     } else {
       options.tmpDir = opts.tmpDir;
@@ -61,7 +62,7 @@ UploadServer = {
       checkCreateDirectory(options.tmpDir);
     }
 
-    if (opts.uploadDir == null) {
+    if (opts.uploadDir === null) {
       throw new Meteor.Error('Upload directory needs to be assigned!');
     } else {
       options.uploadDir = opts.uploadDir;
@@ -71,64 +72,78 @@ UploadServer = {
       checkCreateDirectory(options.uploadDir);
     }
 
-    if (opts.maxPostSize != null) options.maxPostSize = opts.maxPostSize;
-    if (opts.minFileSize != null) options.minFileSize = opts.maxPostSize;
-    if (opts.maxFileSize != null) options.maxFileSize = opts.maxFileSize;
+    ['maxPostSize', 'minFileSize', 'maxFileSize', 'acceptFileTypes',
+      'imageTypes', 'getDirectory', 'getFileName', 'finished', 'imageVersions']
+      .forEach(function (prop) {
+        if (opts[prop] !== null) {
+          options[prop] = opts[prop];
+        }
+      });
+    if (!opts.imageVersions) {
+      options.imageVersions = [];
+    }
+    /*if (opts.maxPostSize !== null) options.maxPostSize = opts.maxPostSize;
+    if (opts.minFileSize !== null) options.minFileSize = opts.maxPostSize;
+    if (opts.maxFileSize !== null) options.maxFileSize = opts.maxFileSize;
     if (opts.acceptFileTypes != null) options.acceptFileTypes = opts.acceptFileTypes;
     if (opts.imageTypes != null) options.imageTypes = opts.imageTypes;
     if (opts.getDirectory != null) options.getDirectory = opts.getDirectory;
     if (opts.getFileName != null) options.getFileName = opts.getFileName;
     if (opts.finished != null) options.finished = opts.finished;
+    if (opts.imageVersions !== null) {
+      options.imageVersions = opts.imageVersions;
+    } else {
+      options.imageVersions = [];
+    }*/
 
     if (opts.uploadUrl) options.uploadUrl = opts.uploadUrl;
 
-    if (opts.imageVersions != null) options.imageVersions = opts.imageVersions
-    else options.imageVersions = [];
   },
   delete: function(path) {
     fs.unlinkSync(options.uploadDir + path);
   },
   serve: function (req, res) {
-    if (options.tmpDir == null || options.uploadDir == null) {
+    if (options.tmpDir === null || options.uploadDir === null) {
       throw new Meteor.Error('Upload component not initialised!');
     }
+    //console.log(req);
 
     res.setHeader(
-      'Access-Control-Allow-Origin',
-      options.accessControl.allowOrigin
-    );
+        'Access-Control-Allow-Origin',
+        options.accessControl.allowOrigin
+        );
     res.setHeader(
-      'Access-Control-Allow-Methods',
-      options.accessControl.allowMethods
-    );
+        'Access-Control-Allow-Methods',
+        options.accessControl.allowMethods
+        );
     res.setHeader(
-      'Access-Control-Allow-Headers',
-      options.accessControl.allowHeaders
-    );
+        'Access-Control-Allow-Headers',
+        options.accessControl.allowHeaders
+        );
     var handleResult = function (result, redirect) {
-        if (redirect) {
-          res.writeHead(302, {
-            'Location': redirect.replace(
-              /%s/,
-              encodeURIComponent(JSON.stringify(result))
+      if (redirect) {
+        res.writeHead(302, {
+          'Location': redirect.replace(
+            /%s/,
+            encodeURIComponent(JSON.stringify(result))
             )
-          });
-          res.end();
-        } else {
-          res.writeHead(200, {
-            'Content-Type': req.headers.accept
-              .indexOf('application/json') !== -1 ?
-              'application/json' : 'text/plain'
-          });
-          res.end(JSON.stringify(result));
-        }
-      },
-      setNoCacheHeaders = function () {
-        res.setHeader('Pragma', 'no-cache');
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
-        res.setHeader('Content-Disposition', 'inline; filename="files.json"');
-      },
-      handler = new UploadHandler(req, res, handleResult);
+        });
+        res.end();
+      } else {
+        res.writeHead(200, {
+          'Content-Type': req.headers.accept
+          .indexOf('application/json') !== -1 ?
+          'application/json' : 'text/plain'
+        });
+        res.end(JSON.stringify(result));
+      }
+    };
+    setNoCacheHeaders = function () {
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.setHeader('Content-Disposition', 'inline; filename="files.json"');
+    };
+    handler = new UploadHandler(req, res, handleResult);
 
     switch (req.method) {
       case 'OPTIONS':
@@ -138,21 +153,25 @@ UploadServer = {
       case 'GET':
         setNoCacheHeaders();
         // TODO: Make safe url
-        connect.static(options.uploadDir)(req, res);
+        //connect.static(options.uploadDir)(req, res);
+        serveStatic(options.uploadDir)(req, res, function () {
+          res.statusCode = 404;
+          res.end();
+        });
         break;
       case 'POST':
         setNoCacheHeaders();
         handler.post();
         break;
-      //case 'DELETE':
-      //  handler.destroy();
-      //  break;
+        //case 'DELETE':
+        //  handler.destroy();
+        //  break;
       default:
         res.statusCode = 405;
         res.end();
     }
   }
-}
+};
 
 var utf8encode = function (str) {
     return unescape(encodeURIComponent(str));
@@ -243,7 +262,7 @@ UploadHandler.prototype.post = function () {
       redirect = value;
     }
     // remember all the form fields
-    if (this.formFields == null) {
+    if (this.formFields === null) {
       this.formFields = {};
     }
   //  console.log('Form field: ' + name + "-" + value);
@@ -356,7 +375,7 @@ var checkCreateDirectory = function(dir) {
       console.log('Created directory: ' + currentDir);
     }
   }
-}
+};
 
 // declare routes
 
